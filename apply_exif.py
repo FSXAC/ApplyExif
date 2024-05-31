@@ -23,6 +23,14 @@ import sys
 from pathlib import Path
 from enum import Enum
 
+import tkinter as tk
+from tkinter import messagebox
+from tkinter import ttk
+from tkinter import filedialog
+import tkinter.font as tkfont
+
+from PIL import Image, ImageTk
+
 # argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("csv_file", help="path to csv file")
@@ -30,6 +38,16 @@ parser.add_argument("directory", help="path to directory")
 parser.add_argument("camera", choices=['canonet', 'fm10'], help="camera model")
 
 # csv enum
+class CSV_OLD(Enum):
+    SHOT = 0
+    EXP_TIME = 1
+    APERTURE = 2
+    FOCAL_LENGTH = 3
+    DATE = 4
+    LOCATION = 5
+    LONGITUDE = 6
+    LATITUDE = 7
+
 class CSV(Enum):
     SHOT = 0
     EXP_TIME = 1
@@ -200,10 +218,123 @@ def main():
             f'{image}'
         )
 
+class ApplyExifApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Apply Exif")
+        self.root.geometry("1600x900")
+
+        # tool bar + buttons
+        self.toolbar = tk.Frame(root, bd=1, relief=tk.RAISED)
+        self.btn_open_csv = tk.Button(self.toolbar, text="Open CSV", command=self.on_open_csv)
+        self.btn_open_photo_dir = tk.Button(self.toolbar, text="Open Photos", command=self.on_open_photo_dir)
+        self.btn_export = tk.Button(self.toolbar, text="Export", command=self.on_export)
+
+        # pack buttons
+        self.btn_open_csv.pack(side=tk.LEFT, padx=2, pady=2)
+        self.btn_open_photo_dir.pack(side=tk.LEFT, padx=2, pady=2)
+        self.btn_export.pack(side=tk.LEFT, padx=2, pady=2)
+
+        # pack toolbar
+        self.toolbar.pack(side=tk.TOP, fill=tk.X)
+
+        # Create the PanedWindow
+        self.paned_window = tk.PanedWindow(root, orient=tk.HORIZONTAL)
+        self.paned_window.pack(fill=tk.BOTH, expand=1)
+
+        # Create the table (Treeview) on the left side
+        self.table_frame = tk.Frame(self.paned_window)
+        self.tree = ttk.Treeview(self.table_frame, columns=("A", "B", "C"), show='headings')
+        self.tree.heading("A", text="Column A")
+        self.tree.heading("B", text="Column B")
+        self.tree.heading("C", text="Column C")
+        self.tree.pack(fill=tk.BOTH, expand=1)
+
+        # Add the table frame to the PanedWindow
+        self.paned_window.add(self.table_frame)
+
+        # Create the photo preview on the right side
+        self.photo_frame = tk.Frame(self.paned_window)
+        self.photo_label = tk.Label(self.photo_frame, text="Photo Preview Here")
+        self.photo_label.pack(fill=tk.BOTH, expand=1)
+
+        # Add the photo frame to the PanedWindow
+        self.paned_window.add(self.photo_frame)
+
+        self.status_bar = tk.Label(root, text="Status: Ready", bd=1, relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # bind root to handlers
+        self.root.bind("<Configure>", self.update_window_size)
+
+    def update_window_size(self, event):
+        w, h = self.root.winfo_width(), self.root.winfo_height()
+        self.status_bar.config(text=f'Status: Window size {w}x{h}')
+    
+    # tool bar handlers
+    def on_open_csv(self):
+        file_path = filedialog.askopenfilename(
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        file_path = Path(file_path)
+        if file_path.exists():
+            try:
+                with open(file_path, newline='') as csvfile:
+                    reader = csv.reader(csvfile)
+                    data = list(reader)
+
+
+                    header = data[0]
+                    header_len = len(header)
+                    data = data[1:]
+
+                    if header_len == len(CSV_OLD):
+                        # Clear the existing table
+                        for widget in self.table_frame.winfo_children():
+                            widget.destroy()
+
+                        # insert header
+                        self.tree = ttk.Treeview(self.table_frame, columns=header, show='headings')
+                        for col in header:
+                            self.tree.heading(col, text=col)
+                            self.tree.column(col, width=tkfont.Font().measure(col))
+                        
+                        # insert remaining rows as data
+                        for row in data:
+                            self.tree.insert("", tk.END, values=row)
+
+                        self.tree.pack(fill=tk.BOTH, expand=1)
+                        self.tree.bind("<ButtonRelease-1>", self.on_cell_select)
+                    
+
+                    messagebox.showinfo("Open CSV", "Load a CSV that contains data")
+            except Exception as e:
+                messagebox.showerror("Error", e)
+
+    def on_open_photo_dir(self):
+        messagebox.showinfo("Open Photos", "")
+
+    def on_export(self):
+        messagebox.showinfo("Export", "")
+
+    # table handlers
+    def on_cell_select(self, event):
+        selected_item = self.tree.selection()[0]
+        column = self.tree.identify_column(event.x)
+        column_name = self.tree.heading(column)['text']
+        # self.tree.set(selected_item, column_name, )
+        self.tree.tag_configure('colored', foreground='blue')
+        self.tree.item(selected_item, tags=('colored',))
+
+def main_menu():
+    root = tk.Tk()
+    app = ApplyExifApp(root)
+    root.mainloop()
 
 if __name__ == "__main__":
     try:
-        main()
+        main_menu()
+        # main()
     except KeyboardInterrupt:
         print("program terminated by user.")
         sys.exit()
