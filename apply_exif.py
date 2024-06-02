@@ -275,6 +275,8 @@ class ApplyExifApp:
         self.csv_data_type = None
         self.csv_data_header = None
 
+        self.selected_table_index = 0
+
         # pre-init
         if self.csv_path and self.photos_path and self.csv_path.exists() and self.photos_path.exists():
             self.combined_load()
@@ -387,10 +389,6 @@ class ApplyExifApp:
             self.photos_preview.append(ImageTk.PhotoImage(Image.open(img)))
             self.photos_listpreview.append(ImageTk.PhotoImage(Image.open(img).resize((20, 20))))
 
-        # preview
-        big_photo = self.photos_preview[0]
-        big_label = tk.Label(self.photo_frame, image=big_photo)
-        big_label.pack()
 
         try:
             with open(self.csv_path, newline='') as csvfile:
@@ -425,15 +423,37 @@ class ApplyExifApp:
                     self.tree.pack(fill=tk.BOTH, expand=1)
                     # self.tree.bind("<ButtonRelease-1>", self.on_cell_select)
                     self.tree.bind("<Double-1>", self.on_double_click)
+                    self.tree.bind("<ButtonRelease-1>", self.on_row_selected)
                 
         except Exception as e:
             messagebox.showerror("Error", e)
 
+        self.display_current_preview()
+
+    def display_current_preview(self):
+        
+        for child in self.photo_frame.winfo_children():
+            child.destroy()
+        big_photo = self.photos_preview[self.selected_table_index]
+        big_label = tk.Label(self.photo_frame, image=big_photo)
+        big_label.pack()
+
     def on_export(self):
         messagebox.showinfo("Export", "")
 
+    
+    def on_row_selected(self, event):
+        selected_item = self.tree.selection()
+        if selected_item:
+            item_id = selected_item[0]
+            row_index = self.tree.index(item_id)
+            self.selected_table_index = row_index
+
+        self.display_current_preview()
+
     # table handlers
     def on_cell_select(self, event):
+        # TODO: remove
         selected_item = self.tree.selection()[0]
         column = self.tree.identify_column(event.x)
         column_name = self.tree.heading(column)['text']
