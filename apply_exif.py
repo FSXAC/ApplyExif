@@ -224,6 +224,10 @@ class ApplyExifApp:
         self.root.title("Apply Exif")
         self.root.geometry("1600x900")
 
+        # paths
+        self.csv_path = Path(r'C:\Users\Muchen\Documents\ApplyExif\Wrista_Arista EDU 100_100_Nikon.csv')
+        self.photos_path = Path(r'C:\Users\Muchen\Documents\ApplyExif\Example_input')
+
         # tool bar + buttons
         self.toolbar = tk.Frame(root, bd=1, relief=tk.RAISED)
         self.btn_open_csv = tk.Button(self.toolbar, text="Open CSV", command=self.on_open_csv)
@@ -267,6 +271,16 @@ class ApplyExifApp:
         # bind root to handlers
         self.root.bind("<Configure>", self.update_window_size)
 
+        # what kind of dataloaded
+        self.csv_data_type = None
+        self.csv_data_header = None
+
+        # pre-init
+        if self.csv_path and self.photos_path and self.csv_path.exists() and self.photos_path.exists():
+            self.combined_load()
+        else:
+            print("big error")
+
     def update_window_size(self, event):
         w, h = self.root.winfo_width(), self.root.winfo_height()
         self.status_bar.config(text=f'Status: Window size {w}x{h}')
@@ -285,15 +299,19 @@ class ApplyExifApp:
 
 
                     header = data[0]
+                    self.csv_data_header = header
                     header_len = len(header)
                     data = data[1:]
 
                     if header_len == len(CSV_OLD):
+                        self.csv_data_type = CSV_OLD
+                        
                         # Clear the existing table
                         for widget in self.table_frame.winfo_children():
                             widget.destroy()
 
-                        # insert header
+                        # add non-editable image column + insert header
+                        # header = ['Image'] + header
                         self.tree = ttk.Treeview(self.table_frame, columns=header, show='headings')
                         for col in header:
                             self.tree.heading(col, text=col)
@@ -302,17 +320,114 @@ class ApplyExifApp:
                         # insert remaining rows as data
                         for row in data:
                             self.tree.insert("", tk.END, values=row)
+                            # self.tree.insert("", tk.END, values=['-'] + row)
 
                         self.tree.pack(fill=tk.BOTH, expand=1)
-                        self.tree.bind("<ButtonRelease-1>", self.on_cell_select)
+                        # self.tree.bind("<ButtonRelease-1>", self.on_cell_select)
+                        self.tree.bind("<Double-1>", self.on_double_click)
                     
-
-                    messagebox.showinfo("Open CSV", "Load a CSV that contains data")
             except Exception as e:
                 messagebox.showerror("Error", e)
 
     def on_open_photo_dir(self):
-        messagebox.showinfo("Open Photos", "")
+        """get all images in a directory"""
+        directory = Path(filedialog.askdirectory())
+        if not directory.exists():
+            messagebox.showerror("Cannot find directory", f"Cannot find directory. {directory} does not exist or cannot be read")
+            return
+
+        image_files = []
+        for file in directory.iterdir():
+            if file.suffix == ".jpeg":
+                image_files.append(file)
+
+        # images.sort(key=lambda x: int(x.stem))
+        try:
+            image_files.sort(key=lambda x: int(x.stem.split("-")[-1]))
+        except ValueError:
+            image_files.sort()
+
+        for img in image_files:
+            print(img)
+
+        # TODO: CONTINUE
+        # self.images = {}
+        # for i, img in enumerate(image_files):
+        #     self.images[str(i + 1)] = ImageTk.PhotoImage(Image.open(img).resize((20, 20)))
+        
+        # for i, item in enumerate(self.tree.get_children()):
+        #     # assuming first column is for image
+        #     first_col_val = self.tree.set(item, column=self.csv_data_header[0])
+        #     print(f'first_col_val: {first_col_val}')
+        #     set_img = self.images[str(i + 1)]
+        #     if set_img:
+        #         print(set_img)
+        #         self.tree.item(item, image=set_img)
+
+            
+
+    def combined_load(self):
+        image_files = []
+        for file in self.photos_path.iterdir():
+            if file.suffix == ".jpeg":
+                image_files.append(file)
+
+        # images.sort(key=lambda x: int(x.stem))
+        try:
+            image_files.sort(key=lambda x: int(x.stem.split("-")[-1]))
+        except ValueError:
+            image_files.sort()
+
+        for img in image_files:
+            print(img)
+
+        self.photos_preview = []
+        self.photos_listpreview = []
+        for i, img in enumerate(image_files):
+            self.photos_preview.append(ImageTk.PhotoImage(Image.open(img)))
+            self.photos_listpreview.append(ImageTk.PhotoImage(Image.open(img).resize((20, 20))))
+
+        # preview
+        big_photo = self.photos_preview[0]
+        big_label = tk.Label(self.photo_frame, image=big_photo)
+        big_label.pack()
+
+        try:
+            with open(self.csv_path, newline='') as csvfile:
+                reader = csv.reader(csvfile)
+                data = list(reader)
+
+
+                header = data[0]
+                self.csv_data_header = header
+                header_len = len(header)
+                data = data[1:]
+
+                if header_len == len(CSV_OLD):
+                    self.csv_data_type = CSV_OLD
+                    
+                    # Clear the existing table
+                    for widget in self.table_frame.winfo_children():
+                        widget.destroy()
+
+                    # add non-editable image column + insert header
+                    # header = ['Image'] + header
+                    self.tree = ttk.Treeview(self.table_frame, columns=header, show='headings')
+                    for col in header:
+                        self.tree.heading(col, text=col)
+                        self.tree.column(col, width=tkfont.Font().measure(col))
+                    
+                    # insert remaining rows as data
+                    for i, row in enumerate(data):
+                        self.tree.insert("", tk.END, values=row, image=self.photos_listpreview[i])
+                        # self.tree.insert("", tk.END, values=['-'] + row)
+
+                    self.tree.pack(fill=tk.BOTH, expand=1)
+                    # self.tree.bind("<ButtonRelease-1>", self.on_cell_select)
+                    self.tree.bind("<Double-1>", self.on_double_click)
+                
+        except Exception as e:
+            messagebox.showerror("Error", e)
 
     def on_export(self):
         messagebox.showinfo("Export", "")
@@ -325,6 +440,37 @@ class ApplyExifApp:
         # self.tree.set(selected_item, column_name, )
         self.tree.tag_configure('colored', foreground='blue')
         self.tree.item(selected_item, tags=('colored',))
+
+    def on_double_click(self, event):
+        region = self.tree.identify('region', event.x, event.y)
+        if region == 'cell':
+            col = self.tree.identify_column(event.x)
+            row = self.tree.identify_row(event.y)
+            if row and col:
+                col_index = int(col[1:]) -1
+                self.edit_cell(row, col_index)
+
+    def edit_cell(self, item, column_index):
+        x, y, width, height = self.tree.bbox(item, column=column_index)
+        print(f'Editing column: {column_index} ({self.csv_data_header[column_index]})')
+        value = self.tree.set(item, column=self.tree['columns'][column_index])
+
+        self.editing_entry = tk.Entry(self.tree, width=width)
+        self.editing_entry.place(x=x, y=y, width=width, height=height)
+        self.editing_entry.insert(0, value)
+        self.editing_entry.focus()
+
+        self.editing_entry.bind('<FocusOut>', lambda e: self.update_cell(item, column_index))
+        self.editing_entry.bind('<Return>', lambda e: self.update_cell(item, column_index, True))
+
+    def update_cell(self, item, column_index, from_return=False):
+        new_value = self.editing_entry.get()
+        self.tree.set(item, column=self.tree['columns'][column_index], value=new_value)
+        self.editing_entry.destroy()
+        self.editing_entry = None
+        if from_return:
+            self.tree.focus(item)
+            self.tree.selection_set(item)
 
 def main_menu():
     root = tk.Tk()
