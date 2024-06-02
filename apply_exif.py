@@ -48,6 +48,17 @@ class CSV_OLD(Enum):
     LONGITUDE = 6
     LATITUDE = 7
 
+CSV_OLD_COLUMN_WIDTH = [
+    50,
+    70,
+    70,
+    90,
+    200,
+    200,
+    100,
+    100
+]
+
 class CSV(Enum):
     SHOT = 0
     EXP_TIME = 1
@@ -233,6 +244,7 @@ class ApplyExifApp:
         self.btn_open_csv = tk.Button(self.toolbar, text="Open CSV", command=self.on_open_csv)
         self.btn_open_photo_dir = tk.Button(self.toolbar, text="Open Photos", command=self.on_open_photo_dir)
         self.btn_export = tk.Button(self.toolbar, text="Export", command=self.on_export)
+        self.btn_save_csv = tk.Button(self.toolbar, text="Save CSV")
 
         # pack buttons
         self.btn_open_csv.pack(side=tk.LEFT, padx=2, pady=2)
@@ -248,11 +260,7 @@ class ApplyExifApp:
 
         # Create the table (Treeview) on the left side
         self.table_frame = ttk.Frame(self.paned_window, width=1600)
-        self.tree = ttk.Treeview(self.table_frame, columns=("A", "B", "C"), show='headings')
-        self.tree.heading("A", text="Column A")
-        self.tree.heading("B", text="Column B")
-        self.tree.heading("C", text="Column C")
-        self.tree.pack(fill=tk.BOTH, expand=1)
+        self.tree = None
 
         # Add the table frame to the PanedWindow
         self.paned_window.add(self.table_frame)
@@ -307,6 +315,9 @@ class ApplyExifApp:
     
     # tool bar handlers
     def on_open_csv(self):
+        # TODO: deprecated remove
+        print("on_open_csv: not used anymore")
+        return
         file_path = filedialog.askopenfilename(
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
         )
@@ -334,8 +345,13 @@ class ApplyExifApp:
                         # header = ['Image'] + header
                         self.tree = ttk.Treeview(self.table_frame, columns=header, show='headings')
                         for col in header:
-                            self.tree.heading(col, text=col)
-                            self.tree.column(col, width=tkfont.Font().measure(col))
+                            self.tree.heading(col, text=col, anchor='w')
+                        
+                        for col in self.tree['columns']:
+                            font = tkfont.Font()
+                            header_text = self.tree.heading(col)
+                            header_width = font.measure(header_text)
+                            self.tree.column(col, width=header_width, anchor='w')
                         
                         # insert remaining rows as data
                         for row in data:
@@ -343,6 +359,7 @@ class ApplyExifApp:
                             # self.tree.insert("", tk.END, values=['-'] + row)
 
                         self.tree.pack(fill=tk.BOTH, expand=1)
+                        # self.tree['show'] = ('headings', 'tree')
                         # self.tree.bind("<ButtonRelease-1>", self.on_cell_select)
                         self.tree.bind("<Double-1>", self.on_double_click)
                     
@@ -404,8 +421,14 @@ class ApplyExifApp:
         self.photos_preview = []
         self.photos_listpreview = []
         for i, img in enumerate(image_files):
-            self.photos_preview.append(ImageTk.PhotoImage(Image.open(img)))
-            self.photos_listpreview.append(ImageTk.PhotoImage(Image.open(img).resize((20, 20))))
+            source_img = Image.open(img)
+            self.photos_preview.append(ImageTk.PhotoImage(source_img))
+
+            preview_width = 30
+            preview_reduce_scale = preview_width / source_img.width
+            self.photos_listpreview.append(ImageTk.PhotoImage(
+                source_img.resize((preview_width, int(preview_reduce_scale * source_img.height)))
+                ))
 
 
         try:
@@ -428,18 +451,36 @@ class ApplyExifApp:
 
                     # add non-editable image column + insert header
                     # header = ['Image'] + header
-                    self.tree = ttk.Treeview(self.table_frame, columns=header, show='headings')
+                    self.tree = ttk.Treeview(self.table_frame, columns=header, show='tree headings')
+                    # for col in header:
+                    #     column = self.tree.heading(col, text=col, anchor='w')
+                    #     self.tree.column(col, width=tkfont.Font().measure(column))
+
                     for col in header:
-                        self.tree.heading(col, text=col)
-                        self.tree.column(col, width=tkfont.Font().measure(col))
+                        self.tree.heading(col, text=col, anchor='w')
                     
                     # insert remaining rows as data
                     for i, row in enumerate(data):
                         self.tree.insert("", tk.END, values=row, image=self.photos_listpreview[i])
                         # self.tree.insert("", tk.END, values=['-'] + row)
-
-                    self.tree.pack(fill=tk.BOTH, expand=1)
                     # self.tree.bind("<ButtonRelease-1>", self.on_cell_select)
+
+                    # readjust column width
+                    for i, col in enumerate(self.tree['columns']):
+                        # font = tkfont.Font()
+                        # header_text = self.tree.heading(col, 'text')
+                        # header_width = font.measure(header_text)
+                        # print(f'{header_text} ({header_width})')
+                        # self.tree.column(col, width=header_width * 2, anchor='w')
+
+                        self.tree.column(col, width=CSV_OLD_COLUMN_WIDTH[i], anchor='w')
+
+
+                    self.tree.column('#0', width=50, anchor='w')
+                    self.tree.pack(fill=tk.BOTH, expand=1)
+                    # Force layout update
+                    self.root.update_idletasks()
+
                     self.tree.bind("<Double-1>", self.on_double_click)
                     self.tree.bind("<ButtonRelease-1>", self.on_row_selected)
                 
@@ -486,9 +527,9 @@ class ApplyExifApp:
             row = self.tree.identify_row(event.y)
             if row and col:
                 col_index = int(col[1:]) -1
-                self.edit_cell(row, col_index)
+                self.edit_generic_cell(row, col_index)
 
-    def edit_cell(self, item, column_index):
+    def edit_generic_cell(self, item, column_index):
         x, y, width, height = self.tree.bbox(item, column=column_index)
         print(f'Editing column: {column_index} ({self.csv_data_header[column_index]})')
         value = self.tree.set(item, column=self.tree['columns'][column_index])
