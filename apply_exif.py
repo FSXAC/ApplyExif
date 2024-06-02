@@ -236,12 +236,12 @@ class ApplyExifApp:
         self.root.geometry("1980x1080")
 
         # paths
-        self.csv_path = Path(r'C:\Users\Muchen\Documents\ApplyExif\Wrista_Arista EDU 100_100_Nikon.csv')
-        self.photos_path = Path(r'C:\Users\Muchen\Documents\ApplyExif\Example_input')
+        self.csv_path = r'C:\Users\Muchen\Documents\ApplyExif\Wrista_Arista EDU 100_100_Nikon.csv'
+        self.photos_path = r'C:\Users\Muchen\Documents\ApplyExif\Example_input'
 
         # tool bar + buttons
         self.toolbar = tk.Frame(root, bd=1, relief=tk.RAISED)
-        self.btn_load = tk.Button(self.toolbar, text="Load", command=lambda: print("TODO: Not impl."))
+        self.btn_load = tk.Button(self.toolbar, text="Load", command=self.on_load)
         self.btn_export = tk.Button(self.toolbar, text="Export", command=self.on_export)
         self.btn_save_csv = tk.Button(self.toolbar, text="Save CSV")
 
@@ -287,11 +287,10 @@ class ApplyExifApp:
         self.prev_root_h = None
 
         # pre-init
-        if self.csv_path and self.photos_path and self.csv_path.exists() and self.photos_path.exists():
-            self.combined_load()
-        else:
-            print("big error")
-
+        # if self.csv_path and self.photos_path and self.csv_path.exists() and self.photos_path.exists():
+        #     self.combined_load()
+        # else:
+        #     print("big error")
         
         # ensure initial proportaions are set correctly after the window is fully init.
         # self.root.after(1, self.adjust_pane)
@@ -309,9 +308,75 @@ class ApplyExifApp:
             self.prev_root_h = h
             self.prev_root_w = w
 
-    def combined_load(self):
+    def on_load(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Select Files to Load")
+        
+        # Make the dialog modal
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # First directory input
+        self.csv_path = tk.StringVar(value=self.csv_path)
+        self.photos_path = tk.StringVar(value=self.photos_path)
+        
+        tk.Label(dialog, text="CSV").grid(row=0, column=0)
+        self.path1_entry = tk.Entry(dialog, textvariable=self.csv_path, width=50)
+        self.path1_entry.grid(row=0, column=1)
+        self.browse1_button = tk.Button(dialog, text="Browse", command=lambda: self.browse_csv(self.csv_path, dialog))
+        self.browse1_button.grid(row=0, column=2)
+        
+        # Second directory input
+        tk.Label(dialog, text="Photos").grid(row=1, column=0)
+        self.path2_entry = tk.Entry(dialog, textvariable=self.photos_path, width=50)
+        self.path2_entry.grid(row=1, column=1)
+        self.browse2_button = tk.Button(dialog, text="Browse", command=lambda: self.browse_directory(self.photos_path, dialog))
+        self.browse2_button.grid(row=1, column=2)
+        
+        # Ok and Cancel buttons
+        self.ok_button = tk.Button(dialog, text="OK", command=lambda: self.on_load_confirm(dialog))
+        self.ok_button.grid(row=2, column=2)
+        self.cancel_button = tk.Button(dialog, text="Cancel", command=dialog.destroy)
+        self.cancel_button.grid(row=2, column=1)
+    
+    def browse_csv(self, path_var: tk.StringVar, parent):
+         # Release grab before opening file dialog
+        parent.grab_release()
+
+        csv_file = filedialog.askopenfilename(
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+
+        # Re-acquire grab after closing file dialog
+        parent.grab_set()
+        if csv_file:
+            path_var.set(csv_file)
+
+    def browse_directory(self, path_var: tk.StringVar, parent):
+        parent.grab_release()
+        directory = filedialog.askdirectory()
+        parent.grab_set()
+        if directory:
+            path_var.set(directory)
+
+    def on_load_confirm(self, parent):
+        csv_path = Path(self.csv_path.get())
+        photos_path = Path(self.photos_path.get())
+
+        e = lambda msg: messagebox.showerror('Load error', msg)
+        if not csv_path or not csv_path.exists():
+            e(f'CSV path not correct: {csv_path}')
+            return
+        elif not photos_path or not photos_path.exists():
+            e(f'Photos path not correct: {photos_path}')
+            return
+        else:
+            self.combined_load(csv_path, photos_path)
+            parent.destroy()
+
+    def combined_load(self, csv_path: Path, photos_path: Path):
         image_files = []
-        for file in self.photos_path.iterdir():
+        for file in photos_path.iterdir():
             if file.suffix == ".jpeg":
                 image_files.append(file)
 
@@ -338,7 +403,7 @@ class ApplyExifApp:
 
 
         try:
-            with open(self.csv_path, newline='') as csvfile:
+            with open(csv_path, newline='') as csvfile:
                 reader = csv.reader(csvfile)
                 data = list(reader)
 
