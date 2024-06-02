@@ -241,15 +241,13 @@ class ApplyExifApp:
 
         # tool bar + buttons
         self.toolbar = tk.Frame(root, bd=1, relief=tk.RAISED)
-        self.btn_open_csv = tk.Button(self.toolbar, text="Open CSV", command=self.on_open_csv)
-        self.btn_open_photo_dir = tk.Button(self.toolbar, text="Open Photos", command=self.on_open_photo_dir)
+        self.btn_load = tk.Button(self.toolbar, text="Load", command=lambda: print("TODO: Not impl."))
         self.btn_export = tk.Button(self.toolbar, text="Export", command=self.on_export)
         self.btn_save_csv = tk.Button(self.toolbar, text="Save CSV")
 
         # pack buttons
-        self.btn_open_csv.pack(side=tk.LEFT, padx=2, pady=2)
-        self.btn_open_photo_dir.pack(side=tk.LEFT, padx=2, pady=2)
-        self.btn_export.pack(side=tk.LEFT, padx=2, pady=2)
+        self.btn_load.pack(side=tk.LEFT)
+        self.btn_export.pack(side=tk.LEFT)
 
         # pack toolbar
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -302,106 +300,14 @@ class ApplyExifApp:
     def adjust_pane(self):
         tot_w = self.paned_window.winfo_width()
         print(f'adjust pane, total width: {tot_w}')
-        # self.paned_window.sash_place(0, int(tot_w * 0.75), 0)
         self.paned_window.sash_place(0, 1600, 0)
 
     def update_window_size(self, event):
         w, h = self.root.winfo_width(), self.root.winfo_height()
         if self.prev_root_w != w or self.prev_root_h != h:
             self.status_bar.config(text=f'Status: Window size {w}x{h}')
-            # self.adjust_pane()
             self.prev_root_h = h
             self.prev_root_w = w
-    
-    # tool bar handlers
-    def on_open_csv(self):
-        # TODO: deprecated remove
-        print("on_open_csv: not used anymore")
-        return
-        file_path = filedialog.askopenfilename(
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-        )
-        file_path = Path(file_path)
-        if file_path.exists():
-            try:
-                with open(file_path, newline='') as csvfile:
-                    reader = csv.reader(csvfile)
-                    data = list(reader)
-
-
-                    header = data[0]
-                    self.csv_data_header = header
-                    header_len = len(header)
-                    data = data[1:]
-
-                    if header_len == len(CSV_OLD):
-                        self.csv_data_type = CSV_OLD
-                        
-                        # Clear the existing table
-                        for widget in self.table_frame.winfo_children():
-                            widget.destroy()
-
-                        # add non-editable image column + insert header
-                        # header = ['Image'] + header
-                        self.tree = ttk.Treeview(self.table_frame, columns=header, show='headings')
-                        for col in header:
-                            self.tree.heading(col, text=col, anchor='w')
-                        
-                        for col in self.tree['columns']:
-                            font = tkfont.Font()
-                            header_text = self.tree.heading(col)
-                            header_width = font.measure(header_text)
-                            self.tree.column(col, width=header_width, anchor='w')
-                        
-                        # insert remaining rows as data
-                        for row in data:
-                            self.tree.insert("", tk.END, values=row)
-                            # self.tree.insert("", tk.END, values=['-'] + row)
-
-                        self.tree.pack(fill=tk.BOTH, expand=1)
-                        # self.tree['show'] = ('headings', 'tree')
-                        # self.tree.bind("<ButtonRelease-1>", self.on_cell_select)
-                        self.tree.bind("<Double-1>", self.on_double_click)
-                    
-            except Exception as e:
-                messagebox.showerror("Error", e)
-
-    def on_open_photo_dir(self):
-        """get all images in a directory"""
-        directory = Path(filedialog.askdirectory())
-        if not directory.exists():
-            messagebox.showerror("Cannot find directory", f"Cannot find directory. {directory} does not exist or cannot be read")
-            return
-
-        image_files = []
-        for file in directory.iterdir():
-            if file.suffix == ".jpeg":
-                image_files.append(file)
-
-        # images.sort(key=lambda x: int(x.stem))
-        try:
-            image_files.sort(key=lambda x: int(x.stem.split("-")[-1]))
-        except ValueError:
-            image_files.sort()
-
-        for img in image_files:
-            print(img)
-
-        # TODO: CONTINUE
-        # self.images = {}
-        # for i, img in enumerate(image_files):
-        #     self.images[str(i + 1)] = ImageTk.PhotoImage(Image.open(img).resize((20, 20)))
-        
-        # for i, item in enumerate(self.tree.get_children()):
-        #     # assuming first column is for image
-        #     first_col_val = self.tree.set(item, column=self.csv_data_header[0])
-        #     print(f'first_col_val: {first_col_val}')
-        #     set_img = self.images[str(i + 1)]
-        #     if set_img:
-        #         print(set_img)
-        #         self.tree.item(item, image=set_img)
-
-            
 
     def combined_load(self):
         image_files = []
@@ -444,45 +350,42 @@ class ApplyExifApp:
 
                 if header_len == len(CSV_OLD):
                     self.csv_data_type = CSV_OLD
+                    sel_column_width = CSV_OLD_COLUMN_WIDTH
+                else:
+                    print("CSV format not recognized")
+                    return
                     
-                    # Clear the existing table
-                    for widget in self.table_frame.winfo_children():
-                        widget.destroy()
+                # Clear the existing table
+                for widget in self.table_frame.winfo_children():
+                    widget.destroy()
 
-                    # add non-editable image column + insert header
-                    # header = ['Image'] + header
-                    self.tree = ttk.Treeview(self.table_frame, columns=header, show='tree headings')
-                    # for col in header:
-                    #     column = self.tree.heading(col, text=col, anchor='w')
-                    #     self.tree.column(col, width=tkfont.Font().measure(column))
+                # create a new tree
+                self.tree = ttk.Treeview(self.table_frame, columns=header, show='tree headings')
 
-                    for col in header:
-                        self.tree.heading(col, text=col, anchor='w')
-                    
-                    # insert remaining rows as data
-                    for i, row in enumerate(data):
-                        self.tree.insert("", tk.END, values=row, image=self.photos_listpreview[i])
-                        # self.tree.insert("", tk.END, values=['-'] + row)
-                    # self.tree.bind("<ButtonRelease-1>", self.on_cell_select)
+                # configure
+                self.tree.tag_configure('oddrow', background='#ffffff')
+                self.tree.tag_configure('evenrow', background='#efefef')
 
-                    # readjust column width
-                    for i, col in enumerate(self.tree['columns']):
-                        # font = tkfont.Font()
-                        # header_text = self.tree.heading(col, 'text')
-                        # header_width = font.measure(header_text)
-                        # print(f'{header_text} ({header_width})')
-                        # self.tree.column(col, width=header_width * 2, anchor='w')
+                # add columns and headings and set them to pre-specified width
+                for i, col in enumerate(header):
+                    self.tree.heading(col, text=col, anchor='w')
+                    self.tree.column(col, width=sel_column_width[i], anchor='w')
 
-                        self.tree.column(col, width=CSV_OLD_COLUMN_WIDTH[i], anchor='w')
+                # id column (where the preview images go)
+                self.tree.column('#0', width=50, anchor='w')
+                
+                # insert remaining rows as data
+                for i, row in enumerate(data):
+                    tag = 'evenrow' if i % 2 == 0 else 'oddrow'
+                    self.tree.insert("", tk.END, values=row, image=self.photos_listpreview[i], tags=(tag,))
 
+                self.tree.pack(fill=tk.BOTH, expand=1)
 
-                    self.tree.column('#0', width=50, anchor='w')
-                    self.tree.pack(fill=tk.BOTH, expand=1)
-                    # Force layout update
-                    self.root.update_idletasks()
+                # Force layout update
+                self.root.update_idletasks()
 
-                    self.tree.bind("<Double-1>", self.on_double_click)
-                    self.tree.bind("<ButtonRelease-1>", self.on_row_selected)
+                self.tree.bind("<Double-1>", self.on_double_click)
+                self.tree.bind("<ButtonRelease-1>", self.on_row_selected)
                 
         except Exception as e:
             messagebox.showerror("Error", e)
@@ -490,12 +393,7 @@ class ApplyExifApp:
         self.display_current_preview()
 
     def display_current_preview(self):
-        
-        for child in self.photo_frame.winfo_children():
-            child.destroy()
-        big_photo = self.photos_preview[self.selected_table_index]
-        big_label = tk.Label(self.photo_frame, image=big_photo)
-        big_label.pack()
+        self.photo_label.config(image = self.photos_preview[self.selected_table_index])
 
     def on_export(self):
         messagebox.showinfo("Export", "")
@@ -509,16 +407,6 @@ class ApplyExifApp:
             self.selected_table_index = row_index
 
         self.display_current_preview()
-
-    # table handlers
-    def on_cell_select(self, event):
-        # TODO: remove
-        selected_item = self.tree.selection()[0]
-        column = self.tree.identify_column(event.x)
-        column_name = self.tree.heading(column)['text']
-        # self.tree.set(selected_item, column_name, )
-        self.tree.tag_configure('colored', foreground='blue')
-        self.tree.item(selected_item, tags=('colored',))
 
     def on_double_click(self, event):
         region = self.tree.identify('region', event.x, event.y)
