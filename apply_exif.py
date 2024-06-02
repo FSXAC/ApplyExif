@@ -222,7 +222,7 @@ class ApplyExifApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Apply Exif")
-        self.root.geometry("1600x900")
+        self.root.geometry("1980x1080")
 
         # paths
         self.csv_path = Path(r'C:\Users\Muchen\Documents\ApplyExif\Wrista_Arista EDU 100_100_Nikon.csv')
@@ -247,7 +247,7 @@ class ApplyExifApp:
         self.paned_window.pack(fill=tk.BOTH, expand=1)
 
         # Create the table (Treeview) on the left side
-        self.table_frame = tk.Frame(self.paned_window)
+        self.table_frame = ttk.Frame(self.paned_window, width=1600)
         self.tree = ttk.Treeview(self.table_frame, columns=("A", "B", "C"), show='headings')
         self.tree.heading("A", text="Column A")
         self.tree.heading("B", text="Column B")
@@ -258,9 +258,9 @@ class ApplyExifApp:
         self.paned_window.add(self.table_frame)
 
         # Create the photo preview on the right side
-        self.photo_frame = tk.Frame(self.paned_window)
+        self.photo_frame = ttk.Frame(self.paned_window, width=200)
         self.photo_label = tk.Label(self.photo_frame, text="Photo Preview Here")
-        self.photo_label.pack(fill=tk.BOTH, expand=1)
+        self.photo_label.pack(fill=tk.BOTH, expand=True)
 
         # Add the photo frame to the PanedWindow
         self.paned_window.add(self.photo_frame)
@@ -277,15 +277,33 @@ class ApplyExifApp:
 
         self.selected_table_index = 0
 
+        self.prev_root_w = None
+        self.prev_root_h = None
+
         # pre-init
         if self.csv_path and self.photos_path and self.csv_path.exists() and self.photos_path.exists():
             self.combined_load()
         else:
             print("big error")
 
+        
+        # ensure initial proportaions are set correctly after the window is fully init.
+        # self.root.after(1, self.adjust_pane)
+        self.adjust_pane()
+
+    def adjust_pane(self):
+        tot_w = self.paned_window.winfo_width()
+        print(f'adjust pane, total width: {tot_w}')
+        # self.paned_window.sash_place(0, int(tot_w * 0.75), 0)
+        self.paned_window.sash_place(0, 1600, 0)
+
     def update_window_size(self, event):
         w, h = self.root.winfo_width(), self.root.winfo_height()
-        self.status_bar.config(text=f'Status: Window size {w}x{h}')
+        if self.prev_root_w != w or self.prev_root_h != h:
+            self.status_bar.config(text=f'Status: Window size {w}x{h}')
+            # self.adjust_pane()
+            self.prev_root_h = h
+            self.prev_root_w = w
     
     # tool bar handlers
     def on_open_csv(self):
