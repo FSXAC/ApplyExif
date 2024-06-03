@@ -31,6 +31,9 @@ import tkinter.font as tkfont
 
 from PIL import Image, ImageTk
 
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
+
 # argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("csv_file", help="path to csv file")
@@ -270,6 +273,11 @@ def main():
             f'-ISO="{iso}" '
             f'{image}'
         )
+
+def run_exiftool(cmd):
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(result.stderr)
 
 class ApplyExifApp:
     def __init__(self, root):
@@ -542,6 +550,8 @@ class ApplyExifApp:
         if len(children) != len(self.image_files):
             messagebox.showwarning('Data length mismatch', 'Num of rows of metadata do not match number of photos')
 
+
+        all_commands = []
         for img_file, item in zip(self.image_files, children):
             g = lambda c: self.tree.set(item, column=self.tree['columns'][c.value])
             if self.csv_data_type == CSV_OLD:
@@ -594,8 +604,7 @@ class ApplyExifApp:
             #     camera_info = f'-Make="Nikon" -Model="Nikon FM10" -LensMake="Nikon"'
 
             # assign exif data
-            # os.system(
-            os.system(
+            all_commands.append(
                 f'exiftool -overwrite_original '
                 f'-AllDates="{date}" '
                 f'{gps_data}'
@@ -611,6 +620,12 @@ class ApplyExifApp:
                 f'{img_file}'
             )
         
+        # print(all_commands)
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(run_exiftool, cmd) for cmd in all_commands]
+            for future in futures:
+                future.result()
+
         print('finished running exiftool')
 
     def on_shift_down(self):
