@@ -244,10 +244,12 @@ class ApplyExifApp:
         self.btn_load = tk.Button(self.toolbar, text="Load", command=self.on_load)
         self.btn_export = tk.Button(self.toolbar, text="Export", command=self.on_export)
         self.btn_save_csv = tk.Button(self.toolbar, text="Save CSV")
+        self.btn_shift_down = tk.Button(self.toolbar, text="Shift down", command=self.on_shift_down)
 
         # pack buttons
         self.btn_load.pack(side=tk.LEFT)
         self.btn_export.pack(side=tk.LEFT)
+        self.btn_shift_down.pack(side=tk.LEFT)
 
         # pack toolbar
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -286,14 +288,6 @@ class ApplyExifApp:
         self.prev_root_w = None
         self.prev_root_h = None
 
-        # pre-init
-        # if self.csv_path and self.photos_path and self.csv_path.exists() and self.photos_path.exists():
-        #     self.combined_load()
-        # else:
-        #     print("big error")
-        
-        # ensure initial proportaions are set correctly after the window is fully init.
-        # self.root.after(1, self.adjust_pane)
         self.adjust_pane()
 
     def adjust_pane(self):
@@ -317,8 +311,10 @@ class ApplyExifApp:
         dialog.grab_set()
         
         # First directory input
-        self.csv_path = tk.StringVar(value=self.csv_path)
-        self.photos_path = tk.StringVar(value=self.photos_path)
+        if not isinstance(self.csv_path, tk.StringVar):
+            self.csv_path = tk.StringVar(value=self.csv_path)
+        if not isinstance(self.photos_path, tk.StringVar):
+            self.photos_path = tk.StringVar(value=self.photos_path)
         
         tk.Label(dialog, text="CSV").grid(row=0, column=0)
         self.path1_entry = tk.Entry(dialog, textvariable=self.csv_path, width=50)
@@ -386,9 +382,6 @@ class ApplyExifApp:
         except ValueError:
             image_files.sort()
 
-        for img in image_files:
-            print(img)
-
         self.photos_preview = []
         self.photos_listpreview = []
         for i, img in enumerate(image_files):
@@ -400,18 +393,20 @@ class ApplyExifApp:
             self.photos_listpreview.append(ImageTk.PhotoImage(
                 source_img.resize((preview_width, int(preview_reduce_scale * source_img.height)))
                 ))
-
+            
+        print(f'{len(self.photos_preview)} images loaded')
 
         try:
             with open(csv_path, newline='') as csvfile:
                 reader = csv.reader(csvfile)
                 data = list(reader)
 
-
                 header = data[0]
                 self.csv_data_header = header
                 header_len = len(header)
-                data = data[1:]
+                data = [row for row in data[1:] if any(cell.strip() for cell in row)]
+                
+                print(f'{len(data)} entries of csv loaded')
 
                 if header_len == len(CSV_OLD):
                     self.csv_data_type = CSV_OLD
@@ -440,9 +435,23 @@ class ApplyExifApp:
                 self.tree.column('#0', width=50, anchor='w')
                 
                 # insert remaining rows as data
-                for i, row in enumerate(data):
+                for i in range(max(len(data), len(self.photos_listpreview))):
                     tag = 'evenrow' if i % 2 == 0 else 'oddrow'
-                    self.tree.insert("", tk.END, values=row, image=self.photos_listpreview[i], tags=(tag,))
+
+                    row_data = [''] * len(header)
+                    photo_image = None
+
+                    try:
+                        row_data = data[i]
+                    except IndexError:
+                        pass
+
+                    try:
+                        photo_image = self.photos_listpreview[i]
+                    except IndexError:
+                        pass
+
+                    self.tree.insert("", tk.END, values=row_data, image=photo_image, tags=(tag,))
 
                 self.tree.pack(fill=tk.BOTH, expand=1)
 
@@ -462,7 +471,42 @@ class ApplyExifApp:
 
     def on_export(self):
         messagebox.showinfo("Export", "")
+    
+    def on_shift_down(self):
+        """
+        shift the data in self.tree down
+        """
 
+        # TODO: what if num children is 0?
+        # need to return early (doesn't do anything)
+        
+        # first check if last row of tree contains emtpy data
+        # if not, insert a new empty row
+        if not self.last_row_is_empty():
+            tag = 'evenrow' if len(self.tree.get_children()) % 2 == 0 else 'oddrow'
+            self.tree.insert("", tk.END, values=[''] * len(self.csv_data_header), tags=(tag,))
+        
+        # then shift all rows down until we get to current index
+        children = self.tree.get_children()
+        num_children = len(children)
+        for i in range(num_children - 1, self.selected_table_index, -1):
+            new_vals = self.tree.item(children[i - 1], 'values')
+            self.tree.item(children[i], values=new_vals)
+
+        # replace sel row with empty row
+        self.tree.item(children[self.selected_table_index], values=[''] * len(self.csv_data_header))
+
+    def last_row_is_empty(self) -> bool:
+        if not self.tree:
+            raise ValueError("no csv file loaded")
+        
+        children = self.tree.get_children()
+        if not children:
+            return False  # Treeview is empty
+
+        last_child = children[-1]
+        values = self.tree.item(last_child, 'values')
+        return all(v == "" or v is None for v in values)
     
     def on_row_selected(self, event):
         selected_item = self.tree.selection()
