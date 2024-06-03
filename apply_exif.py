@@ -134,13 +134,34 @@ def check_match(images, exif_data) -> bool:
 
 def ss_to_float(ss: str) -> float:
     """convert shutter speed (either in the format of 1/Ks or K") to float"""
+
+    # invalid
     if ss == '-':
         return ''
+    
+    # if ends with 's'
+    if ss.endswith('s') or ss.endswith('"'):
+        ss = ss[:-1]
+    
+    # 1/125
+    if '/' in ss:
+        frac = ss.split('/')[-1]
+        return 1 / float(frac)
+    
+    # 1'30"
+    elif '\'' in ss:
+        minute, second = ss.split('\'')
+        return minute * 60 + second
+    
+    elif 'm' in ss:
+        minute, second = ss.split('m')
+        return minute * 60 + second
+    
+    elif ss.isdecimal:
+        return float(ss)
 
-    if ss.endswith('s'):
-        return 1 / float(ss[2:-1])
     else:
-        return float(ss[:-2])
+        print(f'Could not decode shutter speed/long exposure time format: {ss}')
 
 def group_continuous_indices(indices):
     if not indices:
@@ -259,6 +280,11 @@ class ApplyExifApp:
         # paths
         self.csv_path = r'C:\Users\Muchen\Documents\ApplyExif\Wrista_Arista EDU 100_100_Nikon.csv'
         self.photos_path = r'C:\Users\Muchen\Documents\ApplyExif\Example_input'
+
+        # photo data
+        self.image_files = []
+        self.photos_preview = []
+        self.photos_listpreview = []
 
         # tool bar + buttons
         self.toolbar = tk.Frame(root, bd=1, relief=tk.RAISED)
@@ -400,20 +426,17 @@ class ApplyExifApp:
             parent.destroy()
 
     def combined_load(self, csv_path: Path, photos_path: Path):
-        image_files = []
         for file in photos_path.iterdir():
             if file.suffix == ".jpeg":
-                image_files.append(file)
+                self.image_files.append(file)
 
         # images.sort(key=lambda x: int(x.stem))
         try:
-            image_files.sort(key=lambda x: int(x.stem.split("-")[-1]))
+            self.image_files.sort(key=lambda x: int(x.stem.split("-")[-1]))
         except ValueError:
-            image_files.sort()
+            self.image_files.sort()
 
-        self.photos_preview = []
-        self.photos_listpreview = []
-        for i, img in enumerate(image_files):
+        for i, img in enumerate(self.image_files):
             source_img = Image.open(img)
             self.photos_preview.append(ImageTk.PhotoImage(source_img))
 
@@ -509,9 +532,87 @@ class ApplyExifApp:
         if selected_id and selected_index < len(self.photos_preview):
             self.photo_label.config(image = self.photos_preview[selected_index])
 
+    # MARK:
     def on_export(self):
-        messagebox.showinfo("Export", "")
-    
+        if not check_exiftool():
+            messagebox.showerror('Missing tools', 'Cannot invoke exiftool, please install it')
+
+        children = self.tree.get_children()
+
+        if len(children) != len(self.image_files):
+            messagebox.showwarning('Data length mismatch', 'Num of rows of metadata do not match number of photos')
+
+        for img_file, item in zip(self.image_files, children):
+            g = lambda c: self.tree.set(item, column=self.tree['columns'][c.value])
+            if self.csv_data_type == CSV_OLD:
+                ss = g(CSV_OLD.EXP_TIME)
+                aperture = g(CSV_OLD.APERTURE)
+                focal_length = g(CSV.FOCAL_LENGTH)
+                date = g(CSV_OLD.DATE)
+                location = g(CSV_OLD.LOCATION)
+                longitude = g(CSV_OLD.LONGITUDE)
+                latitude = g(CSV_OLD.LATITUDE)
+            else:
+                pass
+
+            # ss or exposure time must be in float (seconds)
+            try:
+                ss = ss_to_float(ss)
+            except ValueError:
+                ss = ''
+
+            # try to convert aperture to float
+            try:
+                if aperture.startswith("f:"):
+                    aperture = aperture[2:]
+                aperture = float(aperture)
+            except ValueError:
+                aperture = ''
+
+            # convert date to exif format
+            # csv date is in the format of "Dec 13, 2023 at 13:36"
+            # exif date is in the format of "2023:12:13 13:36:00"
+            date = datetime.datetime.strptime(date, "%b %d, %Y at %H:%M").strftime("%Y:%m:%d %H:%M:%S")
+
+            # longitude and latitude
+            if longitude and latitude:
+                gps_data = f'-GPSLongitudeRef="W" -GPSLongitude="{longitude}" -GPSLatitudeRef="N" -GPSLatitude="{latitude}" -GPSAltitudeRef="Above Sea Level" -GPSAltitude="0"'
+            else:
+                gps_data = ""
+
+            # Other exif data
+            # print(f'{image} {date} {location} {longitude} {latitude} {ss} {aperture} {focal_length} {iso}')
+
+            ss_cmd = f'-ExposureTime="{ss}" ' if ss else ''
+            aperture_cmd = f'-FNumber="{aperture}" ' if aperture else ''
+
+            camera_info = ''
+            # TODO: FIXME: temp testing
+            # if args.camera == 'canonet':
+            #     camera_info = f'-Make="Canon" -Model="Canon Canonet QL17 Giii" -LensMake="Canon"'
+            # elif args.camera == 'fm10':
+            #     camera_info = f'-Make="Nikon" -Model="Nikon FM10" -LensMake="Nikon"'
+
+            # assign exif data
+            # os.system(
+            os.system(
+                f'exiftool -overwrite_original '
+                f'-AllDates="{date}" '
+                f'{gps_data}'
+                f'-ImageDescription="{location}" '
+                f'-Artist="Muchen He" '
+                # f'-ImageUniqueID="{shot_num}" '
+                f'{ss_cmd} {aperture_cmd}'
+                f'-FocalLength="{focal_length}" -FocalLengthIn35mmFormat="{focal_length}" '
+                f'{camera_info} '
+                # f'-LensModel="{lens_model}" '
+
+                # f'-ISO="{iso}" '
+                f'{img_file}'
+            )
+        
+        print('finished running exiftool')
+
     def on_shift_down(self):
         """
         shift the data in self.tree down
