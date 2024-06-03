@@ -48,6 +48,9 @@ class CSV_OLD(Enum):
     LONGITUDE = 6
     LATITUDE = 7
 
+    def __int__(self):
+        return self.value
+
 CSV_OLD_COLUMN_WIDTH = [
     50,
     70,
@@ -138,6 +141,24 @@ def ss_to_float(ss: str) -> float:
         return 1 / float(ss[2:-1])
     else:
         return float(ss[:-2])
+
+def group_continuous_indices(indices):
+    if not indices:
+        return []
+
+    indices.sort()
+    continuous_groups = []
+    current_group = [indices[0]]
+
+    for i in range(1, len(indices)):
+        if indices[i] == indices[i-1] + 1:
+            current_group.append(indices[i])
+        else:
+            continuous_groups.append(current_group)
+            current_group = [indices[i]]
+
+    continuous_groups.append(current_group)
+    return continuous_groups
 
 def main():
     args = parser.parse_args()
@@ -246,14 +267,18 @@ class ApplyExifApp:
         self.btn_save_csv = tk.Button(self.toolbar, text="Save CSV")
         self.btn_shift_down = tk.Button(self.toolbar, text="Shift down", command=self.on_shift_down)
         self.btn_remove_row = tk.Button(self.toolbar, text="Remove row", command=self.on_remove_row)
-        self.btn_values_lock = tk.Button(self.toolbar, text="Lock values", command=self.on_values_lock)
+        # self.btn_values_lock = tk.Button(self.toolbar, text="Lock values", command=self.on_values_lock)
+        self.btn_autofill = tk.Button(self.toolbar, text="Autofill", command=self.on_autofill)
+        self.btn_clear = tk.Button(self.toolbar, text='Clear', command=self.on_clear)
 
         # pack buttons
         self.btn_load.pack(side=tk.LEFT)
         self.btn_export.pack(side=tk.LEFT)
         self.btn_shift_down.pack(side=tk.LEFT)
         self.btn_remove_row.pack(side=tk.LEFT)
-        self.btn_values_lock.pack(side=tk.LEFT)
+        # self.btn_values_lock.pack(side=tk.LEFT)
+        self.btn_autofill.pack(side=tk.LEFT)
+        self.btn_clear.pack(side=tk.LEFT)
 
         # pack toolbar
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -286,9 +311,6 @@ class ApplyExifApp:
         # what kind of dataloaded
         self.csv_data_type = None
         self.csv_data_header = None
-
-        self.selected_table_index = 0
-        self.selected_table_index_end = 0
 
         self.prev_root_w = None
         self.prev_root_h = None
@@ -431,6 +453,8 @@ class ApplyExifApp:
                 self.tree.tag_configure('oddrow', background='#ffffff')
                 self.tree.tag_configure('evenrow', background='#efefef')
                 self.tree.tag_configure('values_locked', foreground='#aaa')
+                self.tree.tag_configure('edited', foreground='#c60')
+                self.tree.tag_configure('auto', foreground='#06c')
 
                 # add columns and headings and set them to pre-specified width
                 for i, col in enumerate(header):
@@ -459,6 +483,11 @@ class ApplyExifApp:
 
                     self.tree.insert("", tk.END, values=row_data, image=photo_image, tags=(tag,))
 
+                # set default selection to first
+                first_child = self.tree.get_children()[0]
+                self.tree.focus(first_child)
+                self.tree.selection_set(first_child)
+
                 self.tree.pack(fill=tk.BOTH, expand=1)
 
                 # Force layout update
@@ -473,7 +502,10 @@ class ApplyExifApp:
         self.display_current_preview()
 
     def display_current_preview(self):
-        self.photo_label.config(image = self.photos_preview[self.selected_table_index])
+        selected_id = self.tree.selection()[-1]
+        selected_index = self.tree.index(selected_id)
+        if selected_id:
+            self.photo_label.config(image = self.photos_preview[selected_index])
 
     def on_export(self):
         messagebox.showinfo("Export", "")
@@ -495,12 +527,13 @@ class ApplyExifApp:
         # then shift all rows down until we get to current index
         children = self.tree.get_children()
         num_children = len(children)
-        for i in range(num_children - 1, self.selected_table_index, -1):
+        first_selected_index = self.tree.index(self.tree.selection()[0])
+        for i in range(num_children - 1, first_selected_index, -1):
             new_vals = self.tree.item(children[i - 1], 'values')
             self.tree.item(children[i], values=new_vals)
 
         # replace sel row with empty row
-        self.tree.item(children[self.selected_table_index], values=self.empty_row())
+        self.tree.item(children[first_selected_index], values=self.empty_row())
 
     def on_remove_row(self):
         """
@@ -508,7 +541,8 @@ class ApplyExifApp:
         """
         children = self.tree.get_children()
         num_children = len(children)
-        for i in range(self.selected_table_index, num_children):
+        first_selected_index = self.tree.index(self.tree.selection()[0])
+        for i in range(first_selected_index, num_children):
             if i != num_children - 1:
                 new_vals = self.tree.item(children[i + 1], 'values')
                 self.tree.item(children[i], values=new_vals)
@@ -520,21 +554,19 @@ class ApplyExifApp:
                     print('Tried to remove row, but there are more photos, so removal is cancelled')
                     self.tree.item(children[i], values=self.empty_row())
 
-    def add_tags(self, indices: list, tags: list):
-        for i in indices:
-            item = self.tree.get_children()[i]
-            curr_tags = self.tree.item(item, 'tags')
-            self.tree.item(item, tags=curr_tags + tuple(tags))
+    def add_tags(self, items, tags: list):
+        for i in items:
+            curr_tags = self.tree.item(i, 'tags')
+            self.tree.item(i, tags=curr_tags + tuple(tags))
 
-    def remove_tags(self, indices: list, tags: list):
-        for i in indices:
-            item = self.tree.get_children()[i]
-            curr_tags = self.tree.item(item, 'tags')
+    def remove_tags(self, items: list, tags: list):
+        for i in items:
+            curr_tags = self.tree.item(i, 'tags')
             new_tags = tuple(t for t in curr_tags if t not in tags)
-            self.tree.item(item, tags=new_tags)
+            self.tree.item(i, tags=new_tags)
 
     def on_values_lock(self):
-        self.add_tags([self.selected_table_index], ['values_locked'])
+        self.add_tags(self.tree.selection(), ['values_locked'])
 
     def empty_row(self) -> tuple:
         return tuple([''] * len(self.csv_data_header))
@@ -552,12 +584,6 @@ class ApplyExifApp:
         return all(v == "" or v is None for v in values)
     
     def on_row_selected(self, event):
-        selected_item = self.tree.selection()
-        if selected_item:
-            item_id = selected_item[0]
-            row_index = self.tree.index(item_id)
-            self.selected_table_index = row_index
-
         self.display_current_preview()
 
     def on_double_click(self, event):
@@ -579,19 +605,86 @@ class ApplyExifApp:
         self.editing_entry.insert(0, value)
         self.editing_entry.focus()
 
-        self.editing_entry.bind('<FocusOut>', lambda e: self.update_cell(item, column_index))
-        self.editing_entry.bind('<Return>', lambda e: self.update_cell(item, column_index, True))
+        self.editing_entry.bind('<FocusOut>', lambda e: self.update_cell(item, column_index, prev_value=value))
+        self.editing_entry.bind('<Return>', lambda e: self.update_cell(item, column_index, True, prev_value=value))
 
-    def update_cell(self, item, column_index, from_return=False):
+    def update_cell(self, item, column_index, from_return=False, prev_value=None):
         new_value = self.editing_entry.get()
-        self.tree.set(item, column=self.tree['columns'][column_index], value=new_value)
-        current_tags = self.tree.item(item, 'tags')
-        self.tree.item(item, tags=current_tags + ('edited',))
+        if new_value != prev_value:
+            self.tree.set(item, column=self.tree['columns'][column_index], value=new_value)
+            self.add_tags((item, ), ['edited'])
+            self.remove_tags((item, ), ['auto'])
+
         self.editing_entry.destroy()
         self.editing_entry = None
         if from_return:
             self.tree.focus(item)
             self.tree.selection_set(item)
+
+    def on_autofill(self):
+        # get all selections
+        selected = self.tree.selection()
+        selected_indices = [ self.tree.index(item) for item in selected ]
+
+        # factor out ids into continuous groups
+        grouped_selections = group_continuous_indices(selected_indices)
+        for group in grouped_selections:
+            for col_index, col in enumerate(self.csv_data_header):
+                print(f'[autofill] working on "{col}" (index {col_index})')
+                self.autofill_group(group, col_index)
+
+        self.add_tags(selected, ['auto'])
+        self.remove_tags(selected, ['edited'])
+    
+    def autofill_group(self, indices, col_index):
+        children = self.tree.get_children()
+        col = self.tree['columns'][col_index]
+        ref_start_index = indices[0] - 1
+        ref_end_index = indices[-1] + 1
+
+        if ref_start_index < 0 and ref_end_index >= len(children):
+            print('[autofill] Both starting and end ref index out of range. whole list selected?')
+            print('[autofill] Oops, bulk autofil is not supported yet... pls retry')
+            return
+        
+        if ref_start_index < 0:
+            print('[autofill] start ref not avail, only using end ref')
+
+            new_value = self.tree.set(children[ref_end_index], column=col)
+            for i in indices:
+                self.tree.set(children[i], column=col, value=new_value)
+
+            return
+
+        if ref_end_index > len(children):
+            print('[autofill] end ref not avail, only using start ref')
+            return
+        
+        # ================================================================================
+        # all else: normal case
+        ref_start = self.tree.set(children[ref_start_index], column=col)
+        ref_end = self.tree.set(children[ref_end_index], column=col)
+
+        if ref_start == ref_end:
+            for i in indices:
+                self.tree.set(children[i], column=col, value=ref_start)
+
+        # NOTE: not ideal to do this
+        elif col_index == self.csv_data_type.DATE.value:
+            # interprelate date
+            ref_start_dt = datetime.datetime.strptime(ref_start, "%b %d, %Y at %H:%M")
+            ref_end_dt = datetime.datetime.strptime(ref_end, "%b %d, %Y at %H:%M")
+
+            # for num of rows to update, give evenly spreadout timestamps
+            time_step = (ref_end_dt - ref_start_dt) / (len(indices) + 1)
+            for mult, i in enumerate(indices):
+                new_time_value = datetime.datetime.strftime((ref_start_dt + ((mult + 1) * time_step)), "%b %d, %Y at %H:%M")
+                self.tree.set(children[i], column=col, value=new_time_value)
+
+
+    def on_clear(self):
+        for item in self.tree.selection():
+            self.tree.item(item, values=self.empty_row())
 
 def main_menu():
     root = tk.Tk()
