@@ -434,8 +434,9 @@ class ApplyExifApp:
             parent.destroy()
 
     def combined_load(self, csv_path: Path, photos_path: Path):
+        self.image_files = []
         for file in photos_path.iterdir():
-            if file.suffix == ".jpeg":
+            if file.suffix == ".jpeg" or file.suffix == '.jpg':
                 self.image_files.append(file)
 
         # images.sort(key=lambda x: int(x.stem))
@@ -444,14 +445,19 @@ class ApplyExifApp:
         except ValueError:
             self.image_files.sort()
 
+        self.photos_preview = []
+        self.photos_listpreview = []
         for i, img in enumerate(self.image_files):
             source_img = Image.open(img)
-            self.photos_preview.append(ImageTk.PhotoImage(source_img))
-
-            preview_width = 30
+            preview_width = 300
             preview_reduce_scale = preview_width / source_img.width
+            self.photos_preview.append(ImageTk.PhotoImage(
+                source_img.resize((preview_width, int(preview_reduce_scale * source_img.height)))))
+
+            listpreview_width = 30
+            listpreview_reduce_scale = listpreview_width / source_img.width
             self.photos_listpreview.append(ImageTk.PhotoImage(
-                source_img.resize((preview_width, int(preview_reduce_scale * source_img.height)))
+                source_img.resize((listpreview_width, int(listpreview_reduce_scale * source_img.height)))
                 ))
             
         print(f'{len(self.photos_preview)} images loaded')
@@ -535,10 +541,11 @@ class ApplyExifApp:
         self.display_current_preview()
 
     def display_current_preview(self):
-        selected_id = self.tree.selection()[-1]
-        selected_index = self.tree.index(selected_id)
-        if selected_id and selected_index < len(self.photos_preview):
-            self.photo_label.config(image = self.photos_preview[selected_index])
+        if self.tree.selection():
+            selected_id = self.tree.selection()[-1]
+            selected_index = self.tree.index(selected_id)
+            if selected_id and selected_index < len(self.photos_preview):
+                self.photo_label.config(image = self.photos_preview[selected_index])
 
     # MARK:
     def on_export(self):
