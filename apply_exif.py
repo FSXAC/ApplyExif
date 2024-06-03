@@ -434,7 +434,7 @@ class ApplyExifApp:
                 self.csv_data_header = header
                 header_len = len(header)
                 data = [row for row in data[1:] if any(cell.strip() for cell in row)]
-                
+
                 print(f'{len(data)} entries of csv loaded')
 
                 if header_len == len(CSV_OLD):
@@ -731,8 +731,15 @@ class ApplyExifApp:
             print('oops')
 
     def on_save_csv(self):
-        # TODO:
-        pass
+        print(f'Saving back CSV to {self.csv_path.get()}')
+        with open(Path(self.csv_path.get()), 'w', newline='') as outfile:
+            csv_writer = csv.writer(outfile)
+            csv_writer.writerow(self.csv_data_header)
+
+            # write the data
+            for row_id in self.tree.get_children():
+                row = self.tree.item(row_id)['values']
+                csv_writer.writerow(row)
 
     def on_clear(self):
         for item in self.tree.selection():
