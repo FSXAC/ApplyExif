@@ -245,11 +245,13 @@ class ApplyExifApp:
         self.btn_export = tk.Button(self.toolbar, text="Export", command=self.on_export)
         self.btn_save_csv = tk.Button(self.toolbar, text="Save CSV")
         self.btn_shift_down = tk.Button(self.toolbar, text="Shift down", command=self.on_shift_down)
+        self.btn_remove_row = tk.Button(self.toolbar, text="Remove row", command=self.on_remove_row)
 
         # pack buttons
         self.btn_load.pack(side=tk.LEFT)
         self.btn_export.pack(side=tk.LEFT)
         self.btn_shift_down.pack(side=tk.LEFT)
+        self.btn_remove_row.pack(side=tk.LEFT)
 
         # pack toolbar
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -425,6 +427,7 @@ class ApplyExifApp:
                 # configure
                 self.tree.tag_configure('oddrow', background='#ffffff')
                 self.tree.tag_configure('evenrow', background='#efefef')
+                self.tree.tag_configure('edited', foreground='#ff0000')
 
                 # add columns and headings and set them to pre-specified width
                 for i, col in enumerate(header):
@@ -484,7 +487,7 @@ class ApplyExifApp:
         # if not, insert a new empty row
         if not self.last_row_is_empty():
             tag = 'evenrow' if len(self.tree.get_children()) % 2 == 0 else 'oddrow'
-            self.tree.insert("", tk.END, values=[''] * len(self.csv_data_header), tags=(tag,))
+            self.tree.insert("", tk.END, values=self.empty_row(), tags=(tag,))
         
         # then shift all rows down until we get to current index
         children = self.tree.get_children()
@@ -494,7 +497,28 @@ class ApplyExifApp:
             self.tree.item(children[i], values=new_vals)
 
         # replace sel row with empty row
-        self.tree.item(children[self.selected_table_index], values=[''] * len(self.csv_data_header))
+        self.tree.item(children[self.selected_table_index], values=self.empty_row())
+
+    def on_remove_row(self):
+        """
+        Reverse of on_shift_downs
+        """
+        children = self.tree.get_children()
+        num_children = len(children)
+        for i in range(self.selected_table_index, num_children):
+            if i != num_children - 1:
+                new_vals = self.tree.item(children[i + 1], 'values')
+                self.tree.item(children[i], values=new_vals)
+            else:
+                # remove row (but do not delete if there are preview images)
+                if len(children) > len(self.photos_listpreview):
+                    self.tree.delete(children[i])
+                else:
+                    print('Tried to remove row, but there are more photos, so removal is cancelled')
+                    self.tree.item(children[i], values=self.empty_row())
+
+    def empty_row(self) -> tuple:
+        return tuple([''] * len(self.csv_data_header))
 
     def last_row_is_empty(self) -> bool:
         if not self.tree:
@@ -542,6 +566,8 @@ class ApplyExifApp:
     def update_cell(self, item, column_index, from_return=False):
         new_value = self.editing_entry.get()
         self.tree.set(item, column=self.tree['columns'][column_index], value=new_value)
+        current_tags = self.tree.item(item, 'tags')
+        self.tree.item(item, tags=current_tags + ('edited',))
         self.editing_entry.destroy()
         self.editing_entry = None
         if from_return:
