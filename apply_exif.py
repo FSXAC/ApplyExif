@@ -246,12 +246,14 @@ class ApplyExifApp:
         self.btn_save_csv = tk.Button(self.toolbar, text="Save CSV")
         self.btn_shift_down = tk.Button(self.toolbar, text="Shift down", command=self.on_shift_down)
         self.btn_remove_row = tk.Button(self.toolbar, text="Remove row", command=self.on_remove_row)
+        self.btn_values_lock = tk.Button(self.toolbar, text="Lock values", command=self.on_values_lock)
 
         # pack buttons
         self.btn_load.pack(side=tk.LEFT)
         self.btn_export.pack(side=tk.LEFT)
         self.btn_shift_down.pack(side=tk.LEFT)
         self.btn_remove_row.pack(side=tk.LEFT)
+        self.btn_values_lock.pack(side=tk.LEFT)
 
         # pack toolbar
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -286,6 +288,7 @@ class ApplyExifApp:
         self.csv_data_header = None
 
         self.selected_table_index = 0
+        self.selected_table_index_end = 0
 
         self.prev_root_w = None
         self.prev_root_h = None
@@ -427,7 +430,7 @@ class ApplyExifApp:
                 # configure
                 self.tree.tag_configure('oddrow', background='#ffffff')
                 self.tree.tag_configure('evenrow', background='#efefef')
-                self.tree.tag_configure('edited', foreground='#ff0000')
+                self.tree.tag_configure('values_locked', foreground='#aaa')
 
                 # add columns and headings and set them to pre-specified width
                 for i, col in enumerate(header):
@@ -516,6 +519,22 @@ class ApplyExifApp:
                 else:
                     print('Tried to remove row, but there are more photos, so removal is cancelled')
                     self.tree.item(children[i], values=self.empty_row())
+
+    def add_tags(self, indices: list, tags: list):
+        for i in indices:
+            item = self.tree.get_children()[i]
+            curr_tags = self.tree.item(item, 'tags')
+            self.tree.item(item, tags=curr_tags + tuple(tags))
+
+    def remove_tags(self, indices: list, tags: list):
+        for i in indices:
+            item = self.tree.get_children()[i]
+            curr_tags = self.tree.item(item, 'tags')
+            new_tags = tuple(t for t in curr_tags if t not in tags)
+            self.tree.item(item, tags=new_tags)
+
+    def on_values_lock(self):
+        self.add_tags([self.selected_table_index], ['values_locked'])
 
     def empty_row(self) -> tuple:
         return tuple([''] * len(self.csv_data_header))
