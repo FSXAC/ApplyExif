@@ -270,6 +270,7 @@ class ApplyExifApp:
         # self.btn_values_lock = tk.Button(self.toolbar, text="Lock values", command=self.on_values_lock)
         self.btn_autofill = tk.Button(self.toolbar, text="Autofill", command=self.on_autofill)
         self.btn_clear = tk.Button(self.toolbar, text='Clear', command=self.on_clear)
+        self.btn_save_csv = tk.Button(self.toolbar, text="Save CSV", command=self.on_save_csv)
 
         # pack buttons
         self.btn_load.pack(side=tk.LEFT)
@@ -279,6 +280,7 @@ class ApplyExifApp:
         # self.btn_values_lock.pack(side=tk.LEFT)
         self.btn_autofill.pack(side=tk.LEFT)
         self.btn_clear.pack(side=tk.LEFT)
+        self.btn_save_csv.pack(side=tk.LEFT)
 
         # pack toolbar
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -504,7 +506,7 @@ class ApplyExifApp:
     def display_current_preview(self):
         selected_id = self.tree.selection()[-1]
         selected_index = self.tree.index(selected_id)
-        if selected_id:
+        if selected_id and selected_index < len(self.photos_preview):
             self.photo_label.config(image = self.photos_preview[selected_index])
 
     def on_export(self):
@@ -520,9 +522,12 @@ class ApplyExifApp:
         
         # first check if last row of tree contains emtpy data
         # if not, insert a new empty row
+
         if not self.last_row_is_empty():
             tag = 'evenrow' if len(self.tree.get_children()) % 2 == 0 else 'oddrow'
             self.tree.insert("", tk.END, values=self.empty_row(), tags=(tag,))
+        else:
+            print("Last row is still empty, can't shift row from here")
         
         # then shift all rows down until we get to current index
         children = self.tree.get_children()
@@ -639,48 +644,95 @@ class ApplyExifApp:
     def autofill_group(self, indices, col_index):
         children = self.tree.get_children()
         col = self.tree['columns'][col_index]
-        ref_start_index = indices[0] - 1
+        is_date_col = col_index == self.csv_data_type.DATE.value
+        ref_start_index = max(0, indices[0] - 1)
         ref_end_index = indices[-1] + 1
+        ref_start = None
+        ref_end = None
 
+        print(f'start+1: {ref_start_index} end+1: {ref_end_index}; out of {len(children)}')
+
+        try:
+            ref_start = self.tree.set(children[ref_start_index], column=col)
+        except IndexError:
+            pass
+
+        try:
+            ref_end = self.tree.set(children[ref_end_index], column=col)
+        except IndexError:
+            pass
+        
+        # Handle all the cases
+
+        # If everything is selected
         if ref_start_index < 0 and ref_end_index >= len(children):
             print('[autofill] Both starting and end ref index out of range. whole list selected?')
             print('[autofill] Oops, bulk autofil is not supported yet... pls retry')
             return
         
-        if ref_start_index < 0:
+
+        # if only end has valid value
+        if not ref_start and ref_end:
             print('[autofill] start ref not avail, only using end ref')
 
-            new_value = self.tree.set(children[ref_end_index], column=col)
-            for i in indices:
-                self.tree.set(children[i], column=col, value=new_value)
+            if is_date_col:
+
+                # if there is only end ref, and we need to add date/time,
+                # subtract 1 minute for each entry from the end
+                ref_end_dt = datetime.datetime.strptime(ref_end, "%b %d, %Y at %H:%M")
+                for offset, i in enumerate(reversed(indices)):
+                    new_dt = ref_end_dt - datetime.timedelta(minutes=(offset + 1))
+                    new_date_value = datetime.datetime.strftime(new_dt, "%b %d, %Y at %H:%M")
+                    self.tree.set(children[i], column=col, value=new_date_value)
+            else:
+                for i in indices:
+                    self.tree.set(children[i], column=col, value=ref_end)
 
             return
 
-        if ref_end_index > len(children):
+        
+        if ref_start and not ref_end:
             print('[autofill] end ref not avail, only using start ref')
+
+            if is_date_col:
+                # same as previously, but add 1 minute
+                ref_start_dt = datetime.datetime.strptime(ref_start, "%b %d, %Y at %H:%M")
+                for offset, i in enumerate(indices):
+                    new_dt = ref_start_dt + datetime.timedelta(minutes=(offset + 1))
+                    new_date_value = datetime.datetime.strftime(new_dt, "%b %d, %Y at %H:%M")
+                    self.tree.set(children[i], column=col, value=new_date_value)
+
+            else:
+                for i in indices:
+                    self.tree.set(children[i], column=col, value=ref_start)
+
             return
         
-        # ================================================================================
-        # all else: normal case
-        ref_start = self.tree.set(children[ref_start_index], column=col)
-        ref_end = self.tree.set(children[ref_end_index], column=col)
+        elif ref_start and ref_end:
+            
+            # if start and end reference is same, then we can fill everything in between as the same
+            if ref_start == ref_end:
+                for i in indices:
+                    self.tree.set(children[i], column=col, value=ref_start)
 
-        if ref_start == ref_end:
-            for i in indices:
-                self.tree.set(children[i], column=col, value=ref_start)
+            # NOTE: not ideal to do this
+            elif is_date_col:
+                # interprelate date
+                ref_start_dt = datetime.datetime.strptime(ref_start, "%b %d, %Y at %H:%M")
+                ref_end_dt = datetime.datetime.strptime(ref_end, "%b %d, %Y at %H:%M")
 
-        # NOTE: not ideal to do this
-        elif col_index == self.csv_data_type.DATE.value:
-            # interprelate date
-            ref_start_dt = datetime.datetime.strptime(ref_start, "%b %d, %Y at %H:%M")
-            ref_end_dt = datetime.datetime.strptime(ref_end, "%b %d, %Y at %H:%M")
+                # for num of rows to update, give evenly spreadout timestamps
+                time_step = (ref_end_dt - ref_start_dt) / (len(indices) + 1)
+                for mult, i in enumerate(indices):
+                    new_time_value = datetime.datetime.strftime((ref_start_dt + ((mult + 1) * time_step)), "%b %d, %Y at %H:%M")
+                    self.tree.set(children[i], column=col, value=new_time_value)
 
-            # for num of rows to update, give evenly spreadout timestamps
-            time_step = (ref_end_dt - ref_start_dt) / (len(indices) + 1)
-            for mult, i in enumerate(indices):
-                new_time_value = datetime.datetime.strftime((ref_start_dt + ((mult + 1) * time_step)), "%b %d, %Y at %H:%M")
-                self.tree.set(children[i], column=col, value=new_time_value)
+        else:
+            print('oops')
 
+    def on_save_csv(self):
+        # TODO:
+        pass
 
     def on_clear(self):
         for item in self.tree.selection():
