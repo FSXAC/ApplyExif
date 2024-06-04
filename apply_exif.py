@@ -82,6 +82,39 @@ class CSV(Enum):
     NOTES = 13
     STARS = 14
 
+CSV_COLUMN_WIDTH = [
+    50,
+    60,
+    60,
+    60,
+    70,
+    70,
+    100,
+    25,
+    30,
+    100,
+    100,
+    80,
+    80,
+    50,
+    50
+]
+
+CAMERAS = {
+    'canonet': {
+        'make': 'Canon',
+        'model': 'Canonet QL17 Giii',
+    },
+    'fm10': {
+        'make': 'Nikon',
+        'model': 'Nikon FM10'
+    },
+    'h35n': {
+        'make': 'Reto',
+        'model': 'Kodak Ektar H35N'
+    }
+}
+
 def check_exiftool() -> bool:
     """check if exiftool is installed"""
     if os.system("exiftool -ver") == 0:
@@ -160,11 +193,19 @@ def ss_to_float(ss: str) -> float:
         minute, second = ss.split('m')
         return minute * 60 + second
     
-    elif ss.isdecimal:
+    elif ss.isdecimal():
         return float(ss)
 
     else:
         print(f'Could not decode shutter speed/long exposure time format: {ss}')
+
+def aperture_to_float(aperture: str) -> float:
+    if ':' in aperture:
+        return float(aperture.split(':')[-1])
+    elif aperture.isdecimal():
+        return float(aperture)
+    else:
+        print(f'Cant parse aperture: {aperture}')
 
 def group_continuous_indices(indices):
     if not indices:
@@ -286,8 +327,8 @@ class ApplyExifApp:
         self.root.geometry("1980x1080")
 
         # paths
-        self.csv_path = r'C:\Users\Muchen\Documents\ApplyExif\Wrista_Arista EDU 100_100_Nikon.csv'
-        self.photos_path = r'C:\Users\Muchen\Documents\ApplyExif\Example_input'
+        self.csv_path = r'C:\Users\Muchen\Pictures\Vinestill\Vinestill_CineStill 400D_400_Canonet.csv'
+        self.photos_path = r'C:\Users\Muchen\Pictures\Vinestill'
 
         # photo data
         self.image_files = []
@@ -306,6 +347,10 @@ class ApplyExifApp:
         self.btn_clear = tk.Button(self.toolbar, text='Clear', command=self.on_clear)
         self.btn_save_csv = tk.Button(self.toolbar, text="Save CSV", command=self.on_save_csv)
 
+        # TODO:
+        self.btn_copy_above = tk.Button(self.toolbar, text="Copy above")
+        self.btn_copy_below = tk.Button(self.toolbar, text="Copy below")
+
         # pack buttons
         self.btn_load.pack(side=tk.LEFT)
         self.btn_export.pack(side=tk.LEFT)
@@ -315,6 +360,15 @@ class ApplyExifApp:
         self.btn_autofill.pack(side=tk.LEFT)
         self.btn_clear.pack(side=tk.LEFT)
         self.btn_save_csv.pack(side=tk.LEFT)
+
+        # Camera select
+        self.camera_select = ttk.Combobox(self.toolbar, values=list(CAMERAS.keys()))
+        self.camera_select.pack(side=tk.LEFT, padx=10)
+        self.camera_select.bind("<<ComboboxSelected>>", self.on_camera_select)
+
+        # Camera select default selection
+        self.camera_selected = list(CAMERAS.keys())[0]
+        self.camera_select.set(self.camera_selected)
 
         # pack toolbar
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -419,19 +473,29 @@ class ApplyExifApp:
             path_var.set(directory)
 
     def on_load_confirm(self, parent):
-        csv_path = Path(self.csv_path.get())
-        photos_path = Path(self.photos_path.get())
+        csv_path = self.csv_path.get()
+        photos_path = self.photos_path.get()
 
         e = lambda msg: messagebox.showerror('Load error', msg)
-        if not csv_path or not csv_path.exists():
+
+        try:
+            csv_path = Path(csv_path)
+            if not csv_path or not csv_path.exists():
+                raise Exception
+        except Exception:
             e(f'CSV path not correct: {csv_path}')
-            return
-        elif not photos_path or not photos_path.exists():
+
+        try:
+            photos_path = Path(photos_path)
+            if not photos_path or not photos_path.exists():
+                raise Exception
+        except Exception:
             e(f'Photos path not correct: {photos_path}')
-            return
-        else:
-            self.combined_load(csv_path, photos_path)
-            parent.destroy()
+            
+        print(csv_path.resolve())
+        print(photos_path.resolve())
+        self.combined_load(csv_path, photos_path)
+        parent.destroy()
 
     def combined_load(self, csv_path: Path, photos_path: Path):
         self.image_files = []
@@ -477,6 +541,9 @@ class ApplyExifApp:
                 if header_len == len(CSV_OLD):
                     self.csv_data_type = CSV_OLD
                     sel_column_width = CSV_OLD_COLUMN_WIDTH
+                elif header_len == len(CSV):
+                    self.csv_data_type = CSV
+                    sel_column_width = CSV_COLUMN_WIDTH
                 else:
                     print("CSV format not recognized")
                     return
@@ -559,8 +626,16 @@ class ApplyExifApp:
 
 
         all_commands = []
+
+        # iso is the same across shots
+        roll_iso = None
+
         for img_file, item in zip(self.image_files, children):
+
+            # defaults and helper functions
             g = lambda c: self.tree.set(item, column=self.tree['columns'][c.value])
+            lens_model = None
+
             if self.csv_data_type == CSV_OLD:
                 ss = g(CSV_OLD.EXP_TIME)
                 aperture = g(CSV_OLD.APERTURE)
@@ -569,6 +644,23 @@ class ApplyExifApp:
                 location = g(CSV_OLD.LOCATION)
                 longitude = g(CSV_OLD.LONGITUDE)
                 latitude = g(CSV_OLD.LATITUDE)
+                
+                # need to manually provide iso and lens_model
+                if not roll_iso:
+                    roll_iso = messagebox.askquestion("Enter ISO manually")
+
+            elif self.csv_data_type == CSV:
+                ss = g(CSV.EXP_TIME)
+                aperture = g(CSV.APERTURE)
+                focal_length = g(CSV.FOCAL_LENGTH)
+                lens_model = g(CSV.LENS_MODEL)
+                date = g(CSV.DATE)
+                location = g(CSV.LOCATION)
+                latitude = g(CSV.LATITUDE)
+                longitude = g(CSV.LONGITUDE)
+
+                if not roll_iso:
+                    roll_iso = g(CSV.ISO)
             else:
                 pass
 
@@ -580,9 +672,7 @@ class ApplyExifApp:
 
             # try to convert aperture to float
             try:
-                if aperture.startswith("f:"):
-                    aperture = aperture[2:]
-                aperture = float(aperture)
+                aperture = aperture_to_float(aperture)
             except ValueError:
                 aperture = ''
 
@@ -603,12 +693,8 @@ class ApplyExifApp:
             ss_cmd = f'-ExposureTime="{ss}" ' if ss else ''
             aperture_cmd = f'-FNumber="{aperture}" ' if aperture else ''
 
-            camera_info = ''
-            # TODO: FIXME: temp testing
-            # if args.camera == 'canonet':
-            #     camera_info = f'-Make="Canon" -Model="Canon Canonet QL17 Giii" -LensMake="Canon"'
-            # elif args.camera == 'fm10':
-            #     camera_info = f'-Make="Nikon" -Model="Nikon FM10" -LensMake="Nikon"'
+            # camera info
+            camera_info_dict = CAMERAS[self.camera_selected]
 
             # assign exif data
             all_commands.append(
@@ -617,17 +703,19 @@ class ApplyExifApp:
                 f'{gps_data}'
                 f'-ImageDescription="{location}" '
                 f'-Artist="Muchen He" '
-                # f'-ImageUniqueID="{shot_num}" '
                 f'{ss_cmd} {aperture_cmd}'
                 f'-FocalLength="{focal_length}" -FocalLengthIn35mmFormat="{focal_length}" '
-                f'{camera_info} '
-                # f'-LensModel="{lens_model}" '
-
-                # f'-ISO="{iso}" '
+                f'-Make="{camera_info_dict["make"]}" '
+                f'-LensMake="{camera_info_dict["make"]}" '
+                f'-Model="{camera_info_dict["model"]}" '
+                f'-LensModel="{lens_model}" '
+                f'-ISO="{roll_iso}" '
                 f'{img_file}'
             )
         
-        # print(all_commands)
+        print(all_commands)
+
+        return
         with ThreadPoolExecutor() as executor:
             futures = [executor.submit(run_exiftool, cmd) for cmd in all_commands]
             for future in futures:
@@ -867,6 +955,9 @@ class ApplyExifApp:
     def on_clear(self):
         for item in self.tree.selection():
             self.tree.item(item, values=self.empty_row())
+
+    def on_camera_select(self, event):
+        self.camera_selected = self.camera_select.get()
 
 def main_menu():
     root = tk.Tk()
