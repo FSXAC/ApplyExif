@@ -143,7 +143,7 @@ def get_images(directory: Path) -> list:
 def get_exif_data(csv_file: Path, has_header=True) -> list:
     """get exif data from csv file"""
     exif_data = []
-    with open(csv_file, newline="") as csvfile:
+    with open(csv_file, newline="", encoding='utf8') as csvfile:
         reader = csv.reader(csvfile)
         if has_header:
             next(reader, None)
@@ -200,6 +200,9 @@ def ss_to_float(ss: str) -> float:
         print(f'Could not decode shutter speed/long exposure time format: {ss}')
 
 def aperture_to_float(aperture: str) -> float:
+    if aperture == '-':
+        return ''
+
     if ':' in aperture:
         return float(aperture.split(':')[-1])
     elif aperture.isdecimal():
@@ -348,8 +351,6 @@ class ApplyExifApp:
         self.btn_save_csv = tk.Button(self.toolbar, text="Save CSV", command=self.on_save_csv)
 
         # TODO:
-        self.btn_copy_above = tk.Button(self.toolbar, text="Copy above")
-        self.btn_copy_below = tk.Button(self.toolbar, text="Copy below")
 
         # pack buttons
         self.btn_load.pack(side=tk.LEFT)
@@ -369,6 +370,12 @@ class ApplyExifApp:
         # Camera select default selection
         self.camera_selected = list(CAMERAS.keys())[0]
         self.camera_select.set(self.camera_selected)
+
+        # copy entries
+        self.btn_copy_above = tk.Button(self.toolbar, text="Copy above", command=self.on_copy_above)
+        self.btn_copy_below = tk.Button(self.toolbar, text="Copy below", command=self.on_copy_below)
+        self.btn_copy_above.pack(side=tk.LEFT)
+        self.btn_copy_below.pack(side=tk.LEFT)
 
         # pack toolbar
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -527,14 +534,15 @@ class ApplyExifApp:
         print(f'{len(self.photos_preview)} images loaded')
 
         try:
-            with open(csv_path, newline='') as csvfile:
+            with open(csv_path, newline='', encoding='utf8') as csvfile:
                 reader = csv.reader(csvfile)
                 data = list(reader)
 
                 header = data[0]
                 self.csv_data_header = header
                 header_len = len(header)
-                data = [row for row in data[1:] if any(cell.strip() for cell in row)]
+                # data = [row for row in data[1:] if any(cell.strip() for cell in row)]
+                data = [row for row in data[1:]]
 
                 print(f'{len(data)} entries of csv loaded')
 
@@ -683,7 +691,7 @@ class ApplyExifApp:
 
             # longitude and latitude
             if longitude and latitude:
-                gps_data = f'-GPSLongitudeRef="W" -GPSLongitude="{longitude}" -GPSLatitudeRef="N" -GPSLatitude="{latitude}" -GPSAltitudeRef="Above Sea Level" -GPSAltitude="0"'
+                gps_data = f'-GPSLongitudeRef="E" -GPSLongitude="{longitude}" -GPSLatitudeRef="N" -GPSLatitude="{latitude}" -GPSAltitudeRef="Above Sea Level" -GPSAltitude="0"'
             else:
                 gps_data = ""
 
@@ -712,10 +720,7 @@ class ApplyExifApp:
                 f'-ISO="{roll_iso}" '
                 f'{img_file}'
             )
-        
-        print(all_commands)
 
-        return
         with ThreadPoolExecutor() as executor:
             futures = [executor.submit(run_exiftool, cmd) for cmd in all_commands]
             for future in futures:
@@ -837,6 +842,36 @@ class ApplyExifApp:
             self.tree.focus(item)
             self.tree.selection_set(item)
 
+    def on_copy_above(self):
+        # get all selections
+        selected = self.tree.selection()
+        selected_indices = [ self.tree.index(item) for item in selected ]
+
+        # factor out ids into continuous groups
+        grouped_selections = group_continuous_indices(selected_indices)
+        for group in grouped_selections:
+            for col_index, col in enumerate(self.csv_data_header):
+                print(f'[autofill] working on "{col}" (index {col_index})')
+                self.autofill_group(group, col_index, copy='above')
+
+        self.add_tags(selected, ['auto'])
+        self.remove_tags(selected, ['edited'])
+
+    def on_copy_below(self):
+        # get all selections
+        selected = self.tree.selection()
+        selected_indices = [ self.tree.index(item) for item in selected ]
+
+        # factor out ids into continuous groups
+        grouped_selections = group_continuous_indices(selected_indices)
+        for group in grouped_selections:
+            for col_index, col in enumerate(self.csv_data_header):
+                print(f'[autofill] working on "{col}" (index {col_index})')
+                self.autofill_group(group, col_index, copy='below')
+
+        self.add_tags(selected, ['auto'])
+        self.remove_tags(selected, ['edited'])
+
     def on_autofill(self):
         # get all selections
         selected = self.tree.selection()
@@ -852,7 +887,7 @@ class ApplyExifApp:
         self.add_tags(selected, ['auto'])
         self.remove_tags(selected, ['edited'])
     
-    def autofill_group(self, indices, col_index):
+    def autofill_group(self, indices, col_index, copy=None):
         children = self.tree.get_children()
         col = self.tree['columns'][col_index]
         is_date_col = col_index == self.csv_data_type.DATE.value
@@ -872,6 +907,12 @@ class ApplyExifApp:
             ref_end = self.tree.set(children[ref_end_index], column=col)
         except IndexError:
             pass
+
+        # copy above or below
+        if copy == 'above':
+            ref_end = None
+        elif copy == 'below':
+            ref_start = None
         
         # Handle all the cases
 
@@ -943,7 +984,7 @@ class ApplyExifApp:
 
     def on_save_csv(self):
         print(f'Saving back CSV to {self.csv_path.get()}')
-        with open(Path(self.csv_path.get()), 'w', newline='') as outfile:
+        with open(Path(self.csv_path.get()), 'w', newline='', encoding='utf8') as outfile:
             csv_writer = csv.writer(outfile)
             csv_writer.writerow(self.csv_data_header)
 
