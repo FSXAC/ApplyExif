@@ -112,6 +112,10 @@ CAMERAS = {
     'h35n': {
         'make': 'Reto',
         'model': 'Kodak Ektar H35N'
+    },
+    'm38': {
+        'make': 'Kodak',
+        'model': 'Kodak M38'
     }
 }
 
